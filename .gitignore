@@ -1,6 +1,11 @@
-
 .idea
 
 target
 
 project/target
+
+input
+
+output
+
+Makefile
