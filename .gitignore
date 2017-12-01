@@ -2,10 +2,8 @@
 
 target
 
-project/target
+/input
 
-input
+/output
 
-output
-
-Makefile
+/Makefile
