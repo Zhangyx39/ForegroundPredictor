@@ -1,6 +1,8 @@
-import org.apache.spark.mllib.classification.{NaiveBayes, SVMWithSGD}
+import org.apache.spark.ml.classification.LogisticRegression
+import org.apache.spark.mllib.classification.{LogisticRegressionWithLBFGS, LogisticRegressionWithSGD, NaiveBayes, SVMWithSGD}
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.mllib.tree.DecisionTree
 import org.apache.spark.sql.SparkSession
 
 /**
@@ -11,8 +13,11 @@ object Model {
         val spark = SparkSession
             .builder()
             .appName("Foreground Predictor")
-            .master("local[*]")
+//            .master("local[*]")
             .getOrCreate()
+
+        val inputPath = args(0)
+        val outputPath = args(1)
 
         val toLabeledPoint = (row: String) => {
             val size = row.length
@@ -21,16 +26,28 @@ object Model {
             LabeledPoint(label,
                 Vectors.dense(row.substring(0, size - 2)
                     .split(",")
-                    .map(s => s.toDouble)))
+                    .map(_.toDouble)))
         }
 
-        val training = spark.read.textFile("input/sample.csv").rdd.map(toLabeledPoint)
-        val testing = spark.read.textFile("input/sample2.csv").rdd.map(toLabeledPoint)
+        val training = spark.read
+//            .textFile(inputPath + "/sample.csv")
+            .textFile(inputPath + "/training/L6_4_978344.csv")
+            .rdd.map(toLabeledPoint)
+//            .sample(false, 0.75)
+        val testing = spark.read
+//            .textFile(inputPath + "/sample2.csv")
+            .textFile(inputPath + "/validating/L6_6_972760.csv")
+            .rdd.map(toLabeledPoint)
+
 
 //        trainingSet.foreach(println)
         //        val model = NaiveBayes.train(trainingSet, lambda = 1.0, modelType = "multinomial")
         //        val model = LinearRegressionWithSGD.train(trainingSet, 10)
-        val model = NaiveBayes.train(training, 20)
+        val model =
+//        DecisionTree.train(training)
+        new LogisticRegressionWithLBFGS()
+            .setNumClasses(2)
+            .run(training)
 
         val truePositive = spark.sparkContext.longAccumulator
         var falsePositive = spark.sparkContext.longAccumulator
@@ -57,7 +74,17 @@ object Model {
 
         println(truePositive.value + "\t" + falsePositive.value)
         println(falseNegative.value + "\t" + trueNegative.value)
+        val sum = truePositive.value + falsePositive.value +
+            falseNegative.value + trueNegative.value
+        val t = truePositive.value + trueNegative.value
+        println("precision: " + t.toDouble / sum.toDouble)
+
+//        model.save(spark.sparkContext, outputPath)
 
         spark.stop()
     }
 }
+
+// 951487 / 972760 = 97%
+
+// 55 / 8288

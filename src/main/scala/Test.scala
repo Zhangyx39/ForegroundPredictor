@@ -1,5 +1,7 @@
 import org.apache.spark.sql.SparkSession
 
+import scala.collection.mutable.ArrayBuffer
+
 /**
   * Created by Yixing Zhang on 11/30/17.
   */
@@ -11,12 +13,13 @@ object Test {
             .master("local[*]")
             .getOrCreate()
 
-        import spark.implicits._
 
 //        val file = spark.read.option("inferSchema", "true").csv("input/L6_1_965381.csv")
         val file = spark.read
             .option("inferSchema", "true")
-            .csv("input/L6_1_965381.csv")
+//            .csv("input/validating/L6_6_972760.csv")
+            .csv("input/sample.csv")
+//            .textFile("input/validating/L6_6_972760.csv")
 
 //        file.groupBy("_c3087").count().show()
 
@@ -26,10 +29,22 @@ object Test {
 //        println(file.filter(row => row.substring(row.lastIndexOf(",") + 1)
 //            .equals("1")).count())
 
-        file.sample(false, 0.01)
-            .repartition(1)
-            .write.csv("output")
+//        file.sample(false, 0.01)
+//            .repartition(1)
+//            .write.csv("output")
 
+
+
+        val ones = file.select("*").where("_c3087 = 1").limit(10)
+        val zeros = file.select("*").where("_c3087 = 0")
+        val union = ones.union(zeros)
+
+        println(ones.count())
+        println(zeros.count())
+        println(union.count())
+        println(file.count())
+
+//        file.show(5)
     }
 }
 
@@ -40,6 +55,14 @@ L6_1
 +------+------+
 |     1| 10202|
 |     0|955179|
++------+------+
+
+L6_6
++------+------+
+|_c3087| count|
++------+------+
+|     1|  8288|
+|     0|964472|
 +------+------+
 
 sample
