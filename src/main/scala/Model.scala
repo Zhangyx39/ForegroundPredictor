@@ -1,8 +1,6 @@
-import org.apache.spark.ml.classification.LogisticRegression
-import org.apache.spark.mllib.classification.{LogisticRegressionWithLBFGS, LogisticRegressionWithSGD, NaiveBayes, SVMWithSGD}
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.LabeledPoint
-import org.apache.spark.mllib.tree.DecisionTree
+import org.apache.spark.mllib.tree.{DecisionTree, RandomForest}
 import org.apache.spark.sql.SparkSession
 
 /**
@@ -31,55 +29,80 @@ object Model {
 
         val training = spark.read
 //            .textFile(inputPath + "/sample.csv")
-            .textFile(inputPath + "/training/L6_4_978344.csv")
+                        .textFile(inputPath + "/training/L6_4_978344.csv")
+//                        .textFile(inputPath + "/training")
             .rdd.map(toLabeledPoint)
-//            .sample(false, 0.75)
-        val testing = spark.read
-//            .textFile(inputPath + "/sample2.csv")
-            .textFile(inputPath + "/validating/L6_6_972760.csv")
-            .rdd.map(toLabeledPoint)
+//            .sample(false, 0.1)
+            .persist()
 
 
-//        trainingSet.foreach(println)
+
+        //        trainingSet.foreach(println)
         //        val model = NaiveBayes.train(trainingSet, lambda = 1.0, modelType = "multinomial")
         //        val model = LinearRegressionWithSGD.train(trainingSet, 10)
-        val model =
-//        DecisionTree.train(training)
-        new LogisticRegressionWithLBFGS()
-            .setNumClasses(2)
-            .run(training)
 
-        val truePositive = spark.sparkContext.longAccumulator
-        var falsePositive = spark.sparkContext.longAccumulator
-        var falseNegative = spark.sparkContext.longAccumulator
-        var trueNegative = spark.sparkContext.longAccumulator
+        //        val model = new LogisticRegressionWithLBFGS()
+        //            .setNumClasses(2)
+        //            .run(training)
 
-        testing.foreach(lp => {
-            val label = lp.label
-            val prediction = model.predict(lp.features)
-            if (prediction == 1) {
-                if (label == 1) {
-                    truePositive.add(1)
-                } else if (label == 0) {
-                    falsePositive.add(1)
+        val tuning = for (
+//            impurity <- Array("entropy", "gini");
+            impurity <- Array("gini");
+            numTrees <- Range(5, 6, 1);
+            maxDepth <- Range(5, 16, 5);
+            maxBins <- Range(20, 101, 20)
+        ) yield {
+//            val model = DecisionTree.trainClassifier(training, 2,
+//                Map[Int, Int](), impurity, maxDepth, maxBins)
+            val model = RandomForest.trainClassifier(training, 2,
+    Map[Int, Int](), numTrees, "auto", impurity, maxDepth, maxBins)
+
+            (model, impurity, maxDepth, maxBins, numTrees)
+        }
+
+        val testing = spark.read
+//            .textFile(inputPath + "/sample2.csv")
+            .textFile(inputPath + "/validating")
+            .rdd.map(toLabeledPoint)
+            .persist()
+
+        tuning.foreach(x => {
+            val (model, impurity, maxDepth, maxBins, numTrees) = x
+            val truePositive = spark.sparkContext.longAccumulator
+            val falsePositive = spark.sparkContext.longAccumulator
+            val falseNegative = spark.sparkContext.longAccumulator
+            val trueNegative = spark.sparkContext.longAccumulator
+
+            testing.foreach(lp => {
+                val label = lp.label
+                val prediction = model.predict(lp.features)
+                if (prediction == 1) {
+                    if (label == 1) {
+                        truePositive.add(1)
+                    } else if (label == 0) {
+                        falsePositive.add(1)
+                    }
+                } else if (prediction == 0) {
+                    if (label == 0) {
+                        trueNegative.add(1)
+                    } else if (label == 1) {
+                        falseNegative.add(1)
+                    }
                 }
-            } else if (prediction == 0) {
-                if (label == 0) {
-                    trueNegative.add(1)
-                } else if (label == 1) {
-                    falseNegative.add(1)
-                }
-            }
+            })
+
+
+            println(impurity + ", " + maxDepth + ", " + maxBins + ", " + numTrees)
+            println(truePositive.value + "\t" + falsePositive.value)
+            println(falseNegative.value + "\t" + trueNegative.value)
+            val sum = truePositive.value + falsePositive.value +
+                falseNegative.value + trueNegative.value
+            val t = truePositive.value + trueNegative.value
+            println("precision: " + t.toDouble / sum.toDouble)
         })
 
-        println(truePositive.value + "\t" + falsePositive.value)
-        println(falseNegative.value + "\t" + trueNegative.value)
-        val sum = truePositive.value + falsePositive.value +
-            falseNegative.value + trueNegative.value
-        val t = truePositive.value + trueNegative.value
-        println("precision: " + t.toDouble / sum.toDouble)
 
-//        model.save(spark.sparkContext, outputPath)
+        //        model.save(spark.sparkContext, outputPath)
 
         spark.stop()
     }
